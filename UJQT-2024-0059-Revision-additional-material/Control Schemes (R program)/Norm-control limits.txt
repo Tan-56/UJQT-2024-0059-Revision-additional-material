@@ -1,0 +1,69 @@
+######################################################################################
+# The R program below calculates the control limits for the CPD scheme based on the Normal Score-based Lepage statistic when lambda=0.1
+# n0: The sample size for the warm-up data
+# lambda: Smoothing parameter
+# IC case: (loc, sca) = (0, 1),  loc: Location parameter, sca: Scale parameter
+###################################################################################### 
+
+library(parallel)
+library(foreach)
+library(iterators)
+library(doParallel)
+ 
+ rm(list = ls())
+ n0<-20
+ loop<-100000
+ T<-550                 ######Maximum observation time 
+ 
+ time1 <- proc.time()
+ 
+ cl <- makeCluster(detectCores())
+ registerDoParallel(cl)
+ 
+ rls <- foreach(i = 1:loop,.combine = 'rbind')%dopar%{  
+   x<-rnorm(n0,0,1)
+   l<-numeric(T-n0)
+   for (n in (n0+1):T) {
+     y<-rnorm(1,0,1)
+     x<-c(x,y)
+     R<-rank(x)
+     m<-NULL
+     Z<-2
+     lambda<-0.1
+     for (r in n0:(n-1)) {
+ ###########VW Statistic
+     K<-rep(1:n)
+     ETV<-0
+     VARTV<-(r*(n-r)/(n*(n-1)))*sum((qnorm(K/(n+1)))^2)  
+     TV<-sum(qnorm(R[1:r]/(n+1)))
+     STV<-(TV-ETV)/sqrt(VARTV)
+     
+ #########KZ Statistic
+     K<-rep(1:n)
+     ETK<-(r/n)*sum(qnorm(K/(n+1))^2)
+     VARTK<-(r*(n-r)/(n*(n-1)))*sum(qnorm(K/(n+1))^4)-(n-r)/(r*(n-1))* ETK^2
+     TK<-sum(qnorm(R[1:r]/(n+1))^2)
+     STK<-(TK-ETK)/sqrt(VARTK)
+ 
+#########Lepage Statistic
+     LKV<-STK^2+STV^2
+ 
+     Z<-lambda*LKV+(1-lambda)*Z+rnorm(1,0,0.01)
+     m<-c(m,Z)
+     }
+     l[n-n0]<-max(m)    
+   }
+   l
+ }
+ stopCluster(cl)
+ time2 <- proc.time()
+ print(time2-time1)
+ 
+ RLS<-rls
+alpha<-0.002   ###ARL0=500
+h<-numeric(T-n0)   
+for (j in 1:(T-n0)) {
+  hn<-quantile(RLS[,j],1-alpha)
+  RLS<-subset(RLS,RLS[,j]<=quantile(RLS[,j],1-alpha))
+  h[j]<-hn
+}

@@ -1,0 +1,64 @@
+######################################################################################
+#  The R program below calculates the ARL for the CPD scheme based on the Normal Score-based Lepage statistic when the parameters shift.
+# n0: Sample size for the warm-up data
+# lambda: Smoothing parameter
+# L: Control limits
+# IC case: (loc, sca) = (0, 1) 
+# OC case: (loc, sca) = (shift, a) ######################################################################################
+
+ARL<-function(L,shift,a){
+  n0<-20
+  loop<-10000
+  T<-5000
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+  rls <- foreach(i = 1:loop,.combine = 'c')%dopar%{
+      x<-rnorm(n0, 0, 1)  
+      for (n in (n0+1):T) {
+      y<-rnorm(1, shift, a)
+      x<-c(x,y)
+      R<-rank(x)
+      m<-NULL
+      Z<-2
+      lambda<-0.1
+      for (r in n0:(n-1)) {
+###########VW Statistic
+    K<-rep(1:n)
+    ETV<-0
+    VARTV<-(r*(n-r)/(n*(n-1)))*sum((qnorm(K/(n+1)))^2)  
+    TV<-sum(qnorm(R[1:r]/(n+1)))
+    STV<-(TV-ETV)/sqrt(VARTV)
+
+#########KZ Statistic
+    K<-rep(1:n)
+    ETK<-(r/n)*sum(qnorm(K/(n+1))^2)
+    VARTK<-(r*(n-r)/(n*(n-1)))*sum(qnorm(K/(n+1))^4)-(n-r)/(r*(n-1))* ETK^2
+    TK<-sum(qnorm(R[1:r]/(n+1))^2)
+    STK<-(TK-ETK)/sqrt(VARTK)
+
+#########Lepage Statistic
+    LKV<-STK^2+STV^2
+    Z<-lambda*LKV+(1-lambda)*Z+rnorm(1,0,0.01)
+    m<-c(m,Z)
+      }
+      K<-max(m)
+      h<-L[n-n0]
+      if(K>h|n==T){
+        rl<- n-n0
+        break
+      }
+    }   
+    rl
+  }
+  stopCluster(cl)
+
+  arl<-mean(rls)
+  sdrl<-sd(rls)
+  quan<-quantile(rls,c(0.1,0.25,0.5,0.75,0.90))
+  uqna<-as.numeric(quan)   
+  output <- c(shift,arl,sdrl,quan,length(rls))
+  return(output)
+}
+
